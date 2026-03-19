@@ -50,7 +50,18 @@ Extract from URL: `https://xxx.feishu.cn/docx/ABC123` → token is `ABC123`
 | `group` | Sharing with a user group | `openid` |
 
 ### `member_type` — How to identify the member
-`email`, `openid`, `userid`, `unionid`, `openchat`, `opendepartmentid`
+Choose based on the ID format:
+
+| `member_type` | ID prefix/format | Example |
+|---------------|-----------------|---------|
+| `openid` | `ou_` prefix | `ou_c54e1f6b04eebb703c6effc88e207635` |
+| `userid` | no standard prefix | `a]g9241` |
+| `unionid` | `on_` prefix | `on_abc123def456` |
+| `email` | email format | `alice@company.com` |
+| `openchat` | `oc_` prefix | `oc_abc123` |
+| `opendepartmentid` | `od_` prefix | `od_abc123` |
+
+**IMPORTANT**: `ou_` prefix IDs must use `member_type="openid"`, NOT `"userid"`.
 
 ### `perm` — Permission level
 `view` (read only), `edit` (can edit), `full_access` (can manage permissions)
