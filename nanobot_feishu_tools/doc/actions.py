@@ -208,17 +208,20 @@ async def _convert_and_insert(client: lark.Client, doc_token: str, markdown: str
     )
 
     # Use the raw API to convert markdown
-    import lark_oapi
-    from lark_oapi import RawRequest
+    from lark_oapi.core.model.base_request import BaseRequest
+    from lark_oapi.core.enum import HttpMethod, AccessTokenType
 
-    convert_req = RawRequest.builder() \
-        .http_method("POST") \
-        .uri("/open-apis/docx/v1/documents/convert") \
-        .body({"content_type": "markdown", "content": markdown}) \
+    convert_req = (
+        BaseRequest.builder()
+        .http_method(HttpMethod.POST)
+        .uri("/open-apis/docx/v1/documents/convert")
+        .token_types({AccessTokenType.TENANT, AccessTokenType.USER})
+        .body({"content_type": "markdown", "content": markdown})
         .build()
+    )
     convert_resp = await run_sync(client.request, convert_req)
 
-    if not convert_resp.success:
+    if not convert_resp.success():
         raise ValueError(f"Markdown conversion failed: code={convert_resp.code}, msg={convert_resp.msg}")
 
     import json as _json
