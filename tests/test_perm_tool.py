@@ -29,7 +29,13 @@ class TestPermToolMetadata:
         assert set(params["properties"]["action"]["enum"]) == {"list", "add", "remove"}
         assert "action" in params["required"]
         assert "token" in params["required"]
-        assert "type" in params["required"]
+        assert "token_type" in params["required"]
+
+    def test_parameters_has_member_entity_type(self, perm_tool):
+        params = perm_tool.parameters
+        assert "member_entity_type" in params["properties"]
+        assert "user" in params["properties"]["member_entity_type"]["enum"]
+        assert "chat" in params["properties"]["member_entity_type"]["enum"]
 
     def test_to_schema(self, perm_tool):
         schema = perm_tool.to_schema()
@@ -42,7 +48,7 @@ class TestPermToolDispatch:
     async def test_list_dispatches(self, perm_tool):
         with patch("nanobot_feishu_tools.perm.actions.list_members", new_callable=AsyncMock) as mock_list:
             mock_list.return_value = {"members": []}
-            result = await perm_tool.execute(action="list", token="doxcn123", type="docx")
+            result = await perm_tool.execute(action="list", token="doxcn123", token_type="docx")
             mock_list.assert_awaited_once_with(perm_tool._client, "doxcn123", "docx")
             data = json.loads(result)
             assert data["members"] == []
@@ -52,11 +58,12 @@ class TestPermToolDispatch:
         with patch("nanobot_feishu_tools.perm.actions.add_member", new_callable=AsyncMock) as mock_add:
             mock_add.return_value = {"success": True, "member": None}
             result = await perm_tool.execute(
-                action="add", token="doxcn123", type="docx",
-                member_type="email", member_id="alice@example.com", perm="edit",
+                action="add", token="doxcn123", token_type="docx",
+                member_entity_type="user", member_type="email",
+                member_id="alice@example.com", perm="edit",
             )
             mock_add.assert_awaited_once_with(
-                perm_tool._client, "doxcn123", "docx", "email", "alice@example.com", "edit",
+                perm_tool._client, "doxcn123", "docx", "user", "email", "alice@example.com", "edit",
             )
             data = json.loads(result)
             assert data["success"] is True
@@ -66,11 +73,12 @@ class TestPermToolDispatch:
         with patch("nanobot_feishu_tools.perm.actions.remove_member", new_callable=AsyncMock) as mock_rm:
             mock_rm.return_value = {"success": True}
             result = await perm_tool.execute(
-                action="remove", token="doxcn123", type="docx",
-                member_type="email", member_id="alice@example.com",
+                action="remove", token="doxcn123", token_type="docx",
+                member_entity_type="user", member_type="email",
+                member_id="alice@example.com",
             )
             mock_rm.assert_awaited_once_with(
-                perm_tool._client, "doxcn123", "docx", "email", "alice@example.com",
+                perm_tool._client, "doxcn123", "docx", "user", "email", "alice@example.com",
             )
             data = json.loads(result)
             assert data["success"] is True
@@ -79,27 +87,38 @@ class TestPermToolDispatch:
 class TestPermToolValidation:
     @pytest.mark.asyncio
     async def test_unknown_action_returns_error(self, perm_tool):
-        result = await perm_tool.execute(action="unknown", token="t", type="docx")
+        result = await perm_tool.execute(action="unknown", token="t", token_type="docx")
         assert "Error" in result
         assert "Unknown action" in result
 
     @pytest.mark.asyncio
     async def test_list_requires_token(self, perm_tool):
-        result = await perm_tool.execute(action="list", token="", type="docx")
+        result = await perm_tool.execute(action="list", token="", token_type="docx")
         assert "Error" in result
         assert "token" in result
 
     @pytest.mark.asyncio
-    async def test_list_requires_type(self, perm_tool):
-        result = await perm_tool.execute(action="list", token="doxcn123", type="")
+    async def test_list_requires_token_type(self, perm_tool):
+        result = await perm_tool.execute(action="list", token="doxcn123", token_type="")
         assert "Error" in result
-        assert "type" in result
+        assert "token_type" in result
+
+    @pytest.mark.asyncio
+    async def test_add_requires_member_entity_type(self, perm_tool):
+        result = await perm_tool.execute(
+            action="add", token="doxcn123", token_type="docx",
+            member_entity_type="", member_type="email",
+            member_id="alice@example.com", perm="edit",
+        )
+        assert "Error" in result
+        assert "member_entity_type" in result
 
     @pytest.mark.asyncio
     async def test_add_requires_member_type(self, perm_tool):
         result = await perm_tool.execute(
-            action="add", token="doxcn123", type="docx",
-            member_type="", member_id="alice@example.com", perm="edit",
+            action="add", token="doxcn123", token_type="docx",
+            member_entity_type="user", member_type="",
+            member_id="alice@example.com", perm="edit",
         )
         assert "Error" in result
         assert "member_type" in result
@@ -107,8 +126,9 @@ class TestPermToolValidation:
     @pytest.mark.asyncio
     async def test_add_requires_member_id(self, perm_tool):
         result = await perm_tool.execute(
-            action="add", token="doxcn123", type="docx",
-            member_type="email", member_id="", perm="edit",
+            action="add", token="doxcn123", token_type="docx",
+            member_entity_type="user", member_type="email",
+            member_id="", perm="edit",
         )
         assert "Error" in result
         assert "member_id" in result
@@ -116,17 +136,29 @@ class TestPermToolValidation:
     @pytest.mark.asyncio
     async def test_add_requires_perm(self, perm_tool):
         result = await perm_tool.execute(
-            action="add", token="doxcn123", type="docx",
-            member_type="email", member_id="alice@example.com", perm="",
+            action="add", token="doxcn123", token_type="docx",
+            member_entity_type="user", member_type="email",
+            member_id="alice@example.com", perm="",
         )
         assert "Error" in result
         assert "perm" in result
 
     @pytest.mark.asyncio
+    async def test_remove_requires_member_entity_type(self, perm_tool):
+        result = await perm_tool.execute(
+            action="remove", token="doxcn123", token_type="docx",
+            member_entity_type="", member_type="email",
+            member_id="alice@example.com",
+        )
+        assert "Error" in result
+        assert "member_entity_type" in result
+
+    @pytest.mark.asyncio
     async def test_remove_requires_member_type(self, perm_tool):
         result = await perm_tool.execute(
-            action="remove", token="doxcn123", type="docx",
-            member_type="", member_id="alice@example.com",
+            action="remove", token="doxcn123", token_type="docx",
+            member_entity_type="user", member_type="",
+            member_id="alice@example.com",
         )
         assert "Error" in result
         assert "member_type" in result
@@ -134,8 +166,9 @@ class TestPermToolValidation:
     @pytest.mark.asyncio
     async def test_remove_requires_member_id(self, perm_tool):
         result = await perm_tool.execute(
-            action="remove", token="doxcn123", type="docx",
-            member_type="email", member_id="",
+            action="remove", token="doxcn123", token_type="docx",
+            member_entity_type="user", member_type="email",
+            member_id="",
         )
         assert "Error" in result
         assert "member_id" in result

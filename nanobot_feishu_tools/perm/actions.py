@@ -40,6 +40,7 @@ async def add_member(
     client: lark.Client,
     token: str,
     token_type: str,
+    member_entity_type: str,
     member_type: str,
     member_id: str,
     perm: str,
@@ -52,9 +53,11 @@ async def add_member(
 
     member = (
         BaseMember.builder()
+        .type(member_entity_type)
         .member_type(member_type)
         .member_id(member_id)
         .perm(perm)
+        .perm_type("container")
         .build()
     )
     req = (
@@ -84,6 +87,7 @@ async def remove_member(
     client: lark.Client,
     token: str,
     token_type: str,
+    member_entity_type: str,
     member_type: str,
     member_id: str,
 ) -> dict:

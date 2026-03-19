@@ -12,7 +12,8 @@ from nanobot_feishu_tools.perm import actions
 
 
 _TOKEN_TYPES = ["doc", "docx", "sheet", "bitable", "folder", "file", "wiki", "mindnote"]
-_MEMBER_TYPES = ["email", "openid", "userid", "unionid", "openchat", "opendepartmentid"]
+_MEMBER_ENTITY_TYPES = ["user", "chat", "department", "group", "wiki_space_member", "wiki_space_viewer", "wiki_space_editor"]
+_MEMBER_ID_TYPES = ["email", "openid", "userid", "unionid", "openchat", "opendepartmentid"]
 _PERM_LEVELS = ["view", "edit", "full_access"]
 
 
@@ -48,14 +49,19 @@ class FeishuPermTool(Tool):
                     "type": "string",
                     "description": "File/document token",
                 },
-                "type": {
+                "token_type": {
                     "type": "string",
                     "enum": _TOKEN_TYPES,
                     "description": "File token type (docx, sheet, bitable, folder, wiki, etc.)",
                 },
+                "member_entity_type": {
+                    "type": "string",
+                    "enum": _MEMBER_ENTITY_TYPES,
+                    "description": "Member entity type: user, chat, department, group, wiki_space_member, wiki_space_viewer, wiki_space_editor",
+                },
                 "member_type": {
                     "type": "string",
-                    "enum": _MEMBER_TYPES,
+                    "enum": _MEMBER_ID_TYPES,
                     "description": "Member ID type (email, openid, userid, unionid, openchat, opendepartmentid)",
                 },
                 "member_id": {
@@ -68,14 +74,15 @@ class FeishuPermTool(Tool):
                     "description": "Permission level: view, edit, or full_access",
                 },
             },
-            "required": ["action", "token", "type"],
+            "required": ["action", "token", "token_type"],
         }
 
     async def execute(
         self,
         action: str,
         token: str = "",
-        type: str = "",
+        token_type: str = "",
+        member_entity_type: str = "",
         member_type: str = "",
         member_id: str = "",
         perm: str = "",
@@ -89,13 +96,14 @@ class FeishuPermTool(Tool):
         try:
             if action == "list":
                 result = await actions.list_members(
-                    self._client, _req(token, "token"), _req(type, "type"),
+                    self._client, _req(token, "token"), _req(token_type, "token_type"),
                 )
             elif action == "add":
                 result = await actions.add_member(
                     self._client,
                     _req(token, "token"),
-                    _req(type, "type"),
+                    _req(token_type, "token_type"),
+                    _req(member_entity_type, "member_entity_type"),
                     _req(member_type, "member_type"),
                     _req(member_id, "member_id"),
                     _req(perm, "perm"),
@@ -104,7 +112,8 @@ class FeishuPermTool(Tool):
                 result = await actions.remove_member(
                     self._client,
                     _req(token, "token"),
-                    _req(type, "type"),
+                    _req(token_type, "token_type"),
+                    _req(member_entity_type, "member_entity_type"),
                     _req(member_type, "member_type"),
                     _req(member_id, "member_id"),
                 )
