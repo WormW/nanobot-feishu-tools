@@ -71,9 +71,11 @@ def register_tools(registry: ToolRegistry, config: Config) -> None:
     from nanobot_feishu_tools.wiki.tool import FeishuWikiTool
     from nanobot_feishu_tools.bitable.tools import get_bitable_tools
     from nanobot_feishu_tools.task.tools import get_task_tools
+    from nanobot_feishu_tools.perm.tool import FeishuPermTool
 
     registry.register(FeishuDocTool(client))
     registry.register(FeishuWikiTool(client))
+    registry.register(FeishuPermTool(client))
 
     for tool in get_bitable_tools(client):
         registry.register(tool)
@@ -81,4 +83,4 @@ def register_tools(registry: ToolRegistry, config: Config) -> None:
     for tool in get_task_tools(client):
         registry.register(tool)
 
-    logger.info("feishu-tools: Registered doc, wiki, bitable, task tools")
+    logger.info("feishu-tools: Registered doc, wiki, bitable, task, perm tools")

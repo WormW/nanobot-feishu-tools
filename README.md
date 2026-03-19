@@ -8,6 +8,7 @@ Feishu/Lark tools plugin for [nanobot](https://github.com/HKUDS/nanobot) — pro
 - **feishu_wiki** — Browse knowledge spaces, navigate/create/move/rename wiki nodes (6 actions)
 - **feishu_bitable_\*** — 11 tools for Bitable field and record CRUD
 - **feishu_task_\*** — 21 tools for Task/Tasklist/Comment/Attachment management
+- **feishu_perm** — Manage file/document permissions: list, add, or remove collaborators (3 actions)
 
 ## Installation
 
@@ -59,7 +60,7 @@ After installation, restart nanobot. The plugin is auto-discovered via entry poi
 
 ```
 nanobot gateway
-# Log: feishu-tools: Registered doc, wiki, bitable, task tools
+# Log: feishu-tools: Registered doc, wiki, bitable, task, perm tools
 ```
 
 Then interact naturally:
@@ -78,6 +79,7 @@ Enable these scopes in [Feishu Open Platform](https://open.feishu.cn):
 | Wiki | `wiki:wiki` |
 | Bitable | `bitable:app` |
 | Task | `task:task` |
+| Perm | `drive:permission` |
 
 ## Development
 
