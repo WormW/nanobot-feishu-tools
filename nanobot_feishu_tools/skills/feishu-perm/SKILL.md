@@ -3,71 +3,81 @@ name: feishu-perm
 description: "Manage Feishu file/document permissions — list, add, or remove collaborators. Use when user asks to share a document, manage permissions, or check who has access. Works with docx, sheet, bitable, folder, wiki."
 ---
 
-# Feishu Permission Tool
+# Feishu Permission Tool (`feishu_perm`)
 
-Use the `feishu_perm` tool to manage file/document collaborators.
+**IMPORTANT**: Parameter names are `token_type` (NOT `type`), `member_entity_type` (NOT `member_type` alone). All parameters below must use their exact names.
 
-## Actions
+## Quick Reference
 
-| Action | Description | Required Params |
-|--------|-------------|-----------------|
-| `list` | List collaborators | `token`, `token_type` |
-| `add` | Add a collaborator | `token`, `token_type`, `member_entity_type`, `member_type`, `member_id`, `perm` |
-| `remove` | Remove a collaborator | `token`, `token_type`, `member_entity_type`, `member_type`, `member_id` |
+### action="list" — List collaborators
+```json
+feishu_perm(action="list", token="<file_token>", token_type="<docx|sheet|...>")
+```
 
-## Token Types (`token_type`)
-File/document type: `doc`, `docx`, `sheet`, `bitable`, `folder`, `file`, `wiki`, `mindnote`
+### action="add" — Add a collaborator (ALL 6 params required)
+```json
+feishu_perm(action="add", token="<file_token>", token_type="<docx|sheet|...>", member_entity_type="<user|chat|...>", member_type="<email|openid|...>", member_id="<actual_id>", perm="<view|edit|full_access>")
+```
 
-## Member Entity Types (`member_entity_type`)
-What kind of entity is being granted permission:
+### action="remove" — Remove a collaborator (ALL 5 params required)
+```json
+feishu_perm(action="remove", token="<file_token>", token_type="<docx|sheet|...>", member_entity_type="<user|chat|...>", member_type="<email|openid|...>", member_id="<actual_id>")
+```
 
-| Type | Description |
-|------|-------------|
-| `user` | Individual user |
-| `chat` | Group chat |
-| `department` | Department |
-| `group` | User group |
-| `wiki_space_member` | Wiki space member |
-| `wiki_space_viewer` | Wiki space viewer |
-| `wiki_space_editor` | Wiki space editor |
+## Parameter Details
 
-## Member ID Types (`member_type`)
-How the member is identified:
+### `token` — File/document token
+Extract from URL: `https://xxx.feishu.cn/docx/ABC123` → token is `ABC123`
+
+### `token_type` — Document type (NOT named `type`)
+| Value | Description |
+|-------|-------------|
+| `docx` | New document |
+| `doc` | Old document |
+| `sheet` | Spreadsheet |
+| `bitable` | Multi-dimensional table |
+| `folder` | Folder |
+| `file` | Uploaded file |
+| `wiki` | Wiki node |
+| `mindnote` | Mind map |
+
+### `member_entity_type` — What kind of entity receives permission
+| Value | When to use | Typical `member_type` |
+|-------|-------------|----------------------|
+| `user` | Sharing with a person | `email`, `openid`, `userid`, `unionid` |
+| `chat` | Sharing with a group chat | `openchat` |
+| `department` | Sharing with a department | `opendepartmentid` |
+| `group` | Sharing with a user group | `openid` |
+
+### `member_type` — How to identify the member
 `email`, `openid`, `userid`, `unionid`, `openchat`, `opendepartmentid`
 
-## Permission Levels (`perm`)
-| Level | Description |
-|-------|-------------|
-| `view` | View only |
-| `edit` | Can edit |
-| `full_access` | Full access (can manage permissions) |
+### `perm` — Permission level
+`view` (read only), `edit` (can edit), `full_access` (can manage permissions)
 
-## Examples
+## Complete Examples
 
-List collaborators:
-```
-feishu_perm(action="list", token="doxcnXXX", token_type="docx")
+Share a docx with a user by email:
+```json
+feishu_perm(action="add", token="doxcnABC123", token_type="docx", member_entity_type="user", member_type="email", member_id="alice@company.com", perm="edit")
 ```
 
-Share with a user by email:
-```
-feishu_perm(action="add", token="doxcnXXX", token_type="docx", member_entity_type="user", member_type="email", member_id="alice@company.com", perm="edit")
-```
-
-Share with a user by openid:
-```
-feishu_perm(action="add", token="doxcnXXX", token_type="docx", member_entity_type="user", member_type="openid", member_id="ou_xxx", perm="view")
+Share a docx with a user by openid:
+```json
+feishu_perm(action="add", token="doxcnABC123", token_type="docx", member_entity_type="user", member_type="openid", member_id="ou_c54e1f6b04eebb703c6effc88e207635", perm="view")
 ```
 
-Share folder with group chat:
-```
+Share a folder with a group chat:
+```json
 feishu_perm(action="add", token="fldcnXXX", token_type="folder", member_entity_type="chat", member_type="openchat", member_id="oc_xxx", perm="view")
 ```
 
-Remove collaborator:
-```
-feishu_perm(action="remove", token="doxcnXXX", token_type="docx", member_entity_type="user", member_type="email", member_id="alice@company.com")
+List all collaborators of a document:
+```json
+feishu_perm(action="list", token="doxcnABC123", token_type="docx")
 ```
 
-## Required Permission
-Feishu app scope: `drive:permission`
+Remove a collaborator:
+```json
+feishu_perm(action="remove", token="doxcnABC123", token_type="docx", member_entity_type="user", member_type="email", member_id="alice@company.com")
+```
