@@ -22,9 +22,9 @@ class FeishuToolsSettings:
 
 def resolve_settings(config: Config) -> FeishuToolsSettings | None:
     """Resolve Feishu credentials from config or environment."""
-    # 1. tools.feishu (explicit tools config)
-    tools_cfg = config.tools.feishu
-    if tools_cfg and tools_cfg.app_id and tools_cfg.app_secret:
+    # 1. tools.feishu (explicit tools config — may not exist in all schema versions)
+    tools_cfg = getattr(config.tools, "feishu", None)
+    if tools_cfg and getattr(tools_cfg, "app_id", None) and getattr(tools_cfg, "app_secret", None):
         return FeishuToolsSettings(
             app_id=tools_cfg.app_id,
             app_secret=tools_cfg.app_secret,

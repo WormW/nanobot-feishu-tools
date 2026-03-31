@@ -201,51 +201,25 @@ async def action_append(client: lark.Client, doc_token: str, content: str) -> di
 
 
 async def _convert_and_insert(client: lark.Client, doc_token: str, markdown: str) -> int:
-    """Convert markdown to blocks and insert into document."""
+    """Convert markdown to blocks and insert into document.
+
+    Tries the Feishu convert API first (requires docx:document.block:convert
+    permission). Falls back to local markdown-to-blocks conversion.
+    """
     from lark_oapi.api.docx.v1 import (
         CreateDocumentBlockChildrenRequest,
         CreateDocumentBlockChildrenRequestBody,
     )
 
-    # Use the raw API to convert markdown
-    from lark_oapi.core.model.base_request import BaseRequest
-    from lark_oapi.core.enum import HttpMethod, AccessTokenType
-
-    convert_req = (
-        BaseRequest.builder()
-        .http_method(HttpMethod.POST)
-        .uri("/open-apis/docx/v1/documents/convert")
-        .token_types({AccessTokenType.TENANT, AccessTokenType.USER})
-        .body({"content_type": "markdown", "content": markdown})
-        .build()
-    )
-    convert_resp = await run_sync(client.request, convert_req)
-
-    if not convert_resp.success():
-        raise ValueError(f"Markdown conversion failed: code={convert_resp.code}, msg={convert_resp.msg}")
-
-    import json as _json
-    data = _json.loads(convert_resp.raw.content)
-    resp_data = data.get("data", {})
-    blocks = resp_data.get("blocks", [])
-    first_level_ids = resp_data.get("first_level_block_ids", [])
-
+    blocks = await _convert_markdown_to_blocks(client, markdown)
     if not blocks:
         return 0
 
-    # Reorder blocks by first_level_block_ids
-    if first_level_ids:
-        block_map = {b["block_id"]: b for b in blocks if "block_id" in b}
-        ordered = [block_map[bid] for bid in first_level_ids if bid in block_map]
-        if ordered:
-            blocks = ordered
-
-    # Clean and insert
+    # Clean and insert in batches
     cleaned, _skipped = _clean_blocks_for_insert(blocks)
     if not cleaned:
         return 0
 
-    # Insert in batches
     total_inserted = 0
     for i in range(0, len(cleaned), MAX_BLOCKS_PER_INSERT):
         batch = cleaned[i:i + MAX_BLOCKS_PER_INSERT]
@@ -264,6 +238,233 @@ async def _convert_and_insert(client: lark.Client, doc_token: str, markdown: str
         total_inserted += len(children) if children else len(batch)
 
     return total_inserted
+
+
+async def _convert_markdown_to_blocks(client: lark.Client, markdown: str) -> list[dict]:
+    """Convert markdown to Feishu blocks. Try API first, fall back to local."""
+    # Try the SDK convert API
+    try:
+        from lark_oapi.api.docx.v1 import (
+            ConvertDocumentRequest,
+            ConvertDocumentRequestBody,
+        )
+        body = (
+            ConvertDocumentRequestBody.builder()
+            .content_type("markdown")
+            .content(markdown)
+            .build()
+        )
+        req = ConvertDocumentRequest.builder().request_body(body).build()
+        resp = await run_sync(client.docx.v1.document.convert, req)
+
+        if resp.success() and resp.data and resp.data.blocks:
+            blocks = [to_json(b) for b in resp.data.blocks]
+            first_ids = resp.data.first_level_block_ids or []
+            if first_ids:
+                block_map = {b.get("block_id"): b for b in blocks if b.get("block_id")}
+                ordered = [block_map[bid] for bid in first_ids if bid in block_map]
+                if ordered:
+                    return ordered
+            return blocks
+    except Exception:
+        pass
+
+    # Fallback: local markdown to blocks conversion
+    return _parse_markdown_to_blocks(markdown)
+
+
+# ---------------------------------------------------------------------------
+# Local markdown → Feishu blocks converter
+# ---------------------------------------------------------------------------
+
+_BLOCK_TYPE_MAP = {
+    "text": 2, "heading1": 3, "heading2": 4, "heading3": 5,
+    "bullet": 12, "ordered": 13, "code": 14, "quote": 15,
+    "todo": 17, "divider": 22,
+}
+
+_CODE_LANG_MAP = {
+    "python": 49, "py": 49, "go": 18, "golang": 18, "java": 25,
+    "javascript": 26, "js": 26, "typescript": 67, "ts": 67,
+    "bash": 3, "sh": 3, "shell": 3, "zsh": 3, "sql": 59,
+    "json": 28, "yaml": 73, "yml": 73, "html": 22, "css": 9,
+    "c": 6, "cpp": 7, "c++": 7, "rust": 55, "ruby": 54,
+    "php": 46, "swift": 62, "kotlin": 30, "lua": 33,
+    "markdown": 35, "md": 35, "xml": 72, "toml": 65,
+    "dockerfile": 13, "makefile": 34, "protobuf": 52, "proto": 52,
+}
+
+
+def _make_text_element(text: str, style: dict | None = None) -> dict:
+    """Create a single text_run element."""
+    elem: dict[str, Any] = {"text_run": {"content": text}}
+    if style:
+        elem["text_run"]["text_element_style"] = style
+    return elem
+
+
+def _parse_inline(text: str) -> list[dict]:
+    """Parse inline markdown (bold, italic, code, links) into text_run elements."""
+    elements: list[dict] = []
+    # Pattern: **bold**, *italic*, `code`, [text](url)
+    pattern = re.compile(
+        r'(\*\*(.+?)\*\*)'        # bold
+        r'|(\*(.+?)\*)'           # italic
+        r'|(`(.+?)`)'             # inline code
+        r'|(\[([^\]]+)\]\(([^)]+)\))'  # link
+    )
+    pos = 0
+    for m in pattern.finditer(text):
+        # Add plain text before match
+        if m.start() > pos:
+            elements.append(_make_text_element(text[pos:m.start()]))
+
+        if m.group(2):  # bold
+            elements.append(_make_text_element(m.group(2), {"bold": True}))
+        elif m.group(4):  # italic
+            elements.append(_make_text_element(m.group(4), {"italic": True}))
+        elif m.group(6):  # inline code
+            elements.append(_make_text_element(m.group(6), {"inline_code": True}))
+        elif m.group(8):  # link
+            link_text = m.group(8) if m.group(8) else m.group(9)
+            elements.append({
+                "text_run": {
+                    "content": link_text,
+                    "text_element_style": {
+                        "link": {"url": m.group(9)},
+                    },
+                }
+            })
+        pos = m.end()
+
+    # Remaining text
+    if pos < len(text):
+        elements.append(_make_text_element(text[pos:]))
+
+    return elements if elements else [_make_text_element(text)]
+
+
+def _make_block(type_key: str, elements: list[dict], extra_style: dict | None = None) -> dict:
+    """Create a Feishu block dict."""
+    bt = _BLOCK_TYPE_MAP[type_key]
+    style = extra_style or {}
+    block: dict[str, Any] = {"block_type": bt}
+    if type_key == "divider":
+        block["divider"] = {}
+    else:
+        block[type_key] = {"elements": elements, "style": style}
+    return block
+
+
+def _parse_markdown_to_blocks(markdown: str) -> list[dict]:
+    """Parse markdown text into a list of Feishu-compatible block dicts."""
+    lines = markdown.split("\n")
+    blocks: list[dict] = []
+    i = 0
+
+    # Skip YAML frontmatter
+    if lines and lines[0].strip() == "---":
+        i = 1
+        while i < len(lines) and lines[i].strip() != "---":
+            i += 1
+        i += 1  # skip closing ---
+
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        # Empty line → skip
+        if not stripped:
+            i += 1
+            continue
+
+        # Divider: --- or *** or ___
+        if re.match(r'^[-*_]{3,}\s*$', stripped):
+            blocks.append(_make_block("divider", []))
+            i += 1
+            continue
+
+        # Headings
+        heading_match = re.match(r'^(#{1,3})\s+(.+)$', stripped)
+        if heading_match:
+            level = len(heading_match.group(1))
+            type_key = f"heading{level}"
+            elements = _parse_inline(heading_match.group(2).strip())
+            blocks.append(_make_block(type_key, elements))
+            i += 1
+            continue
+
+        # Code block
+        if stripped.startswith("```"):
+            lang_str = stripped[3:].strip().lower()
+            lang_code = _CODE_LANG_MAP.get(lang_str, 0)
+            code_lines: list[str] = []
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                code_lines.append(lines[i])
+                i += 1
+            i += 1  # skip closing ```
+            code_content = "\n".join(code_lines)
+            style = {"language": lang_code} if lang_code else {}
+            blocks.append(_make_block("code", [_make_text_element(code_content)], style))
+            continue
+
+        # Blockquote
+        if stripped.startswith("> "):
+            quote_text = stripped[2:]
+            elements = _parse_inline(quote_text)
+            blocks.append(_make_block("quote", elements))
+            i += 1
+            continue
+
+        # Bullet list
+        bullet_match = re.match(r'^[-*+]\s+(.+)$', stripped)
+        if bullet_match:
+            elements = _parse_inline(bullet_match.group(1))
+            blocks.append(_make_block("bullet", elements))
+            i += 1
+            continue
+
+        # Ordered list
+        ordered_match = re.match(r'^\d+[.)]\s+(.+)$', stripped)
+        if ordered_match:
+            elements = _parse_inline(ordered_match.group(1))
+            blocks.append(_make_block("ordered", elements))
+            i += 1
+            continue
+
+        # Todo list
+        todo_match = re.match(r'^[-*+]\s+\[([ xX])\]\s+(.+)$', stripped)
+        if todo_match:
+            done = todo_match.group(1).lower() == "x"
+            elements = _parse_inline(todo_match.group(2))
+            style = {"done": done}
+            blocks.append(_make_block("todo", elements, style))
+            i += 1
+            continue
+
+        # Table → convert to text blocks (tables are complex in Feishu block API)
+        if stripped.startswith("|") and stripped.endswith("|"):
+            table_lines: list[str] = []
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                row = lines[i].strip()
+                # Skip separator rows like |---|---|
+                if not re.match(r'^\|[\s\-:|]+\|$', row):
+                    table_lines.append(row)
+                i += 1
+            for tl in table_lines:
+                cells = [c.strip() for c in tl.strip("|").split("|")]
+                row_text = " | ".join(cells)
+                elements = _parse_inline(row_text)
+                blocks.append(_make_block("text", elements))
+            continue
+
+        # Regular paragraph
+        elements = _parse_inline(stripped)
+        blocks.append(_make_block("text", elements))
+        i += 1
+
+    return blocks
 
 
 async def action_create_and_write(
